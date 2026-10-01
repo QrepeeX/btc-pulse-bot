@@ -1,0 +1,43 @@
+:root {
+  color-scheme: dark;
+
+  /* ref 1: dark finance app, blue radial glow */
+  --bg: #0a0a0f;
+  --glow-core: #1e4bff;
+  --glow-mid: #5b8cff;
+  --glow-edge: #cfe0ff;
+  --glow-fade: 60%;
+
+  --accent: #2f7bff;
+  --accent-from: #1e4bff;
+  --accent-to: #4f9bff;
+  --accent-grad: linear-gradient(90deg, var(--accent-from), var(--accent-to));
+
+  --text: #ffffff;
+  --text-2: rgba(255, 255, 255, 0.56);
+  --hairline: rgba(255, 255, 255, 0.08);
+
+  /* ref 2: frosted glass, corners bleed blue and coral */
+  --glass-fill: rgba(20, 22, 32, 0.55);
+  --glass-fill-solid: rgba(20, 22, 32, 0.92);
+  --glass-blur: 14px;
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-bleed-blue: rgba(47, 123, 255, 0.35);
+  --glass-bleed-coral: rgba(255, 90, 110, 0.28);
+
+  /* ref 3: tiles with a glowing blue rim */
+  --rim-fill-from: #0b1640;
+  --rim-fill-to: #1e4bff;
+  --rim-highlight: rgba(160, 200, 255, 0.9);
+  --rim-bloom: 0 0 24px rgba(47, 123, 255, 0.45);
+
+  --up: #34e39a;
+  --down: #ff5a6e;
+
+  --radius-card: 24px;
+  --radius-tile: 28px;
+  --radius-pill: 999px;
+
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --gutter: 16px;
+}

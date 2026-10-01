@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0A0A0F">
+  <title>BTC за 5 минут</title>
+  <style>html,body{background:#0A0A0F;margin:0}</style>
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+  <script src="vendor/lightweight-charts.standalone.production.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+  <main class="app loading" id="app">
+    <header class="head">
+      <div class="pair">BTC / USDT</div>
+      <div class="price" id="price" aria-live="off"><span class="cur">$</span><span id="price-val">00 000,00</span></div>
+      <div class="badge glass flat" id="badge" role="status">
+        <span class="live-text"><span class="arrow" aria-hidden="true"></span> <span id="pct">0,000%</span></span>
+        <span class="live-text abs" id="abs">$0,00</span>
+        <span class="stale-text" id="stale-text">Нет связи</span>
+      </div>
+      <div class="banner" id="banner"></div>
+    </header>
+
+    <section class="chart-card rim" aria-label="График BTC за 5 минут">
+      <div id="chart"></div>
+      <div class="skeleton" aria-hidden="true">Загрузка…</div>
+      <div class="overlay" id="overlay">
+        <div id="overlay-text">Не удалось получить данные. Проверь интернет или VPN.</div>
+        <button type="button" id="retry">Повторить</button>
+      </div>
+    </section>
+
+    <div class="segmented glass" id="toggle" data-mode="line" role="group" aria-label="Тип графика">
+      <span class="thumb" aria-hidden="true"></span>
+      <button type="button" data-mode="line" aria-pressed="true">Линия</button>
+      <button type="button" data-mode="candle" aria-pressed="false">Свечи</button>
+    </div>
+
+    <section class="tiles" aria-label="Статистика за 5 минут">
+      <div class="tile rim"><span>Максимум</span><b id="t-high">—</b></div>
+      <div class="tile rim"><span>Минимум</span><b id="t-low">—</b></div>
+      <div class="tile rim"><span>Объём, BTC</span><b id="t-vbase">—</b></div>
+      <div class="tile rim"><span>Объём, USDT</span><b id="t-vquote">—</b></div>
+    </section>
+
+    <footer class="foot">
+      <div id="source">Источник: —</div>
+      <div id="updated">Обновлено: —</div>
+      <div>Цена в USDT (≈ $). Не является инвестиционной рекомендацией.</div>
+      <div>График: <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView Lightweight Charts</a></div>
+    </footer>
+  </main>
+</body>
+</html>
