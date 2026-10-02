@@ -49,3 +49,16 @@ test('buildFrame on empty series does not throw', () => {
     assert.ok(f.future.length > 0);
   }
 });
+
+test('buildFrame excludes coarse bars in line and candle modes', () => {
+  const coarse = [0, 1, 2].map((i) => ({ t: NOW - (240 - i * 60) * 1000, o: 84170, h: 84170, l: 84170, c: 84170, v: 1, q: 1, coarse: true }));
+  const real = Array.from({ length: 10 }, (_, i) => {
+    const p = 84100 + i;
+    return { t: NOW - (9 - i) * 1000, o: p, h: p, l: p, c: p, v: 1, q: 1 };
+  });
+  const line = buildFrame([...coarse, ...real], NOW, 'line', null);
+  assert.equal(line.history.length, real.length);
+  assert.ok(line.history.every((p) => p.value >= 84100));
+  const candle = buildFrame([...coarse, ...real], NOW, 'candle', null);
+  assert.ok(candle.history.every((c) => c.low >= 84100));
+});

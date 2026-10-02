@@ -10,7 +10,8 @@ const toCandle = (k) => ({ time: Math.floor(k.t / 1000), open: k.o, high: k.h, l
 
 // One frame = everything the chart shows: history for the active mode, the future grid, the visible range.
 export function buildFrame(series, nowMs, mode, fc) {
-  const bars = windowBars(series, nowMs);
+  // Coarse (1m backfill) bars only serve the 5 min baseline; plotted next to 1 s bars they make a cliff and uneven axis.
+  const bars = windowBars(series, nowMs).filter((b) => !b.coarse);
   let history;
   let stepSec;
   let anchor;
@@ -229,12 +230,12 @@ export function createChart(el, { up = '#34E39A', down = '#FF5A6E', accent = '#2
   // update() throws on out-of-order times, so a failed update falls back to a full reload.
   function pushBar(series, nowMs) {
     const last = series[series.length - 1];
-    if (!last) return;
+    if (!last || last.coarse) return;
     try {
       if (mode === 'line') {
         area.update(toLine(last));
       } else {
-        const tail = bucketCandles(series.slice(-(CANDLE_SEC + 2)), CANDLE_SEC, 1);
+        const tail = bucketCandles(series.slice(-(CANDLE_SEC + 2)).filter((b) => !b.coarse), CANDLE_SEC, 1);
         if (tail[0]) candles.update(toCandle(tail[0]));
       }
     } catch {

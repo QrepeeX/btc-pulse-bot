@@ -166,8 +166,8 @@ const bar = (t, c = 100) => ({ t, o: c, h: c, l: c, c, v: 1, q: c });
 
 function setup(opts = {}) {
   const clock = fakeClock();
-  const primary = fakeSource('Bybit (Spot)', [bar(1000), bar(2000)]);
-  const fallback = fakeSource('Binance (Spot)', [bar(1000, 90)]);
+  const primary = fakeSource('Binance (Spot)', [bar(1000), bar(2000)]);
+  const fallback = fakeSource('Bybit (Spot)', [bar(1000, 90)]);
   const ev = { bars: [], ticks: [], status: [] };
   const mgr = createFeedManager({
     sources: [primary, fallback], clock, random: () => 0.5,
@@ -186,7 +186,7 @@ test('manager: initial backfill replaces, live tick sets state live', async () =
   assert.equal(ev.bars[0].b.length, 2);
   primary.subs[0].onBar(bar(3000));
   assert.equal(mgr.getState(), 'live');
-  assert.equal(ev.status.at(-1).source, 'Bybit (Spot)');
+  assert.equal(ev.status.at(-1).source, 'Binance (Spot)');
   assert.equal(ev.ticks.length, 1);
   mgr.stop();
 });
@@ -201,7 +201,7 @@ test('manager: >5 s without ticks fails over to fallback with replace', async ()
   assert.equal(mgr.getSourceIndex(), 1);
   assert.ok(primary.subs[0].closed);
   assert.equal(ev.status.at(-1).fallback, true);
-  assert.equal(ev.status.at(-1).source, 'Binance (Spot)');
+  assert.equal(ev.status.at(-1).source, 'Bybit (Spot)');
   assert.equal(ev.bars.at(-1).replace, true);
   assert.equal(fallback.subs.length, 1);
   fallback.subs[0].onBar(bar(7000, 95));

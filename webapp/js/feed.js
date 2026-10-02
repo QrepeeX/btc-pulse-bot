@@ -332,6 +332,6 @@ export function createFeedManager({
 
 export function createFeed(params, handlers) {
   const sources =
-    params.get('mock') === '1' ? [createMockFeed()] : [createBybitFeed(), createBinanceFeed()];
+    params.get('mock') === '1' ? [createMockFeed()] : [createBinanceFeed(), createBybitFeed()];
   return createFeedManager({ sources, ...handlers });
 }
