@@ -88,12 +88,34 @@ test('Binance subscribe: stream URL, bars forwarded, close reported once', () =>
 test('Bybit: coarse backfill, trades aggregated into 1 s bars, ping every 20 s', async () => {
   FakeWS.instances = [];
   const clock = fakeClock();
-  const list = [['120000', '0', '0', '0', '101', '2', '200'], ['60000', '0', '0', '0', '100', '1', '100']];
+  const klines = [['240000', '0', '0', '0', '105', '1', '100'], ['180000', '0', '0', '0', '102', '3', '300'], ['120000', '0', '0', '0', '101', '2', '200'], ['60000', '0', '0', '0', '100', '1', '100']];
+  const trades = [
+    { price: '103', size: '1', time: '241500' }, { price: '104', size: '1', time: '241900' },
+    { price: '102.5', size: '1', time: '240100' },
+  ];
+  const urls = [];
   const feed = createBybitFeed({
-    fetchImpl: async () => jsonRes({ result: { list } }), WebSocketImpl: FakeWS, clock,
+    fetchImpl: async (u) => {
+      urls.push(u);
+      return u.includes('recent-trade')
+        ? jsonRes({ result: { list: trades } })
+        : jsonRes({ time: 245000, result: { list: klines } });
+    },
+    WebSocketImpl: FakeWS, clock,
   });
   const back = await feed.backfill();
-  assert.deepEqual(back.map((b) => [b.t, b.c]), [[119000, 100], [179000, 101]]);
+  assert.ok(urls.includes('https://api.bybit.com/v5/market/recent-trade?category=spot&symbol=BTCUSDT&limit=1000'));
+  assert.ok(urls.includes('https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=1&limit=8'));
+  // minute 240000 is still in progress at server time 245000 -> dropped; coarse bars flagged, real 1 s bars follow
+  assert.deepEqual(back.map((b) => [b.t, b.c, !!b.coarse]), [[119000, 100, true], [179000, 101, true], [239000, 102, true], [240000, 102.5, false], [241000, 104, false]]);
+  assert.deepEqual((await feed.backfill(241000)).map((b) => b.t), [241000]);
+  const onlyKl = createBybitFeed({
+    fetchImpl: async (u) => (u.includes('recent-trade') ? jsonRes({}, false, 500) : jsonRes({ time: 245000, result: { list: klines } })),
+    clock,
+  });
+  assert.equal((await onlyKl.backfill()).length, 3);
+  const dead = createBybitFeed({ fetchImpl: async () => jsonRes({}, false, 403), clock });
+  await assert.rejects(dead.backfill(), /403/);
 
   const got = [];
   feed.subscribe({ onBar: (b) => got.push(b), onClose() {} });
@@ -109,6 +131,11 @@ test('Bybit: coarse backfill, trades aggregated into 1 s bars, ping every 20 s',
   assert.deepEqual([s.o, s.h, s.l, s.c, s.v], [10, 12, 10, 11, 4]);
   await clock.advance(20000);
   assert.deepEqual(JSON.parse(ws.sent[1]), { op: 'ping' });
+});
+
+test('feed names carry the market type', () => {
+  assert.equal(createBybitFeed().name, 'Bybit (Spot)');
+  assert.equal(createBinanceFeed().name, 'Binance (Spot)');
 });
 
 test('mock feed is deterministic by seed', async () => {
@@ -139,8 +166,8 @@ const bar = (t, c = 100) => ({ t, o: c, h: c, l: c, c, v: 1, q: c });
 
 function setup(opts = {}) {
   const clock = fakeClock();
-  const primary = fakeSource('Binance', [bar(1000), bar(2000)]);
-  const fallback = fakeSource('Bybit', [bar(1000, 90)]);
+  const primary = fakeSource('Bybit (Spot)', [bar(1000), bar(2000)]);
+  const fallback = fakeSource('Binance (Spot)', [bar(1000, 90)]);
   const ev = { bars: [], ticks: [], status: [] };
   const mgr = createFeedManager({
     sources: [primary, fallback], clock, random: () => 0.5,
@@ -159,7 +186,7 @@ test('manager: initial backfill replaces, live tick sets state live', async () =
   assert.equal(ev.bars[0].b.length, 2);
   primary.subs[0].onBar(bar(3000));
   assert.equal(mgr.getState(), 'live');
-  assert.equal(ev.status.at(-1).source, 'Binance');
+  assert.equal(ev.status.at(-1).source, 'Bybit (Spot)');
   assert.equal(ev.ticks.length, 1);
   mgr.stop();
 });
@@ -174,7 +201,7 @@ test('manager: >5 s without ticks fails over to fallback with replace', async ()
   assert.equal(mgr.getSourceIndex(), 1);
   assert.ok(primary.subs[0].closed);
   assert.equal(ev.status.at(-1).fallback, true);
-  assert.equal(ev.status.at(-1).source, 'Bybit');
+  assert.equal(ev.status.at(-1).source, 'Binance (Spot)');
   assert.equal(ev.bars.at(-1).replace, true);
   assert.equal(fallback.subs.length, 1);
   fallback.subs[0].onBar(bar(7000, 95));

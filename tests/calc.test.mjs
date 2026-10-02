@@ -77,6 +77,21 @@ test('partial window when no bar older than 300 s', () => {
   assert.equal(st.partial, true);
 });
 
+test('coarse base far from the cutoff degrades to partial; a close coarse base is trusted', () => {
+  const now = 1_000_000_000_000;
+  const mk = (baseT) => [
+    { t: baseT, o: 100, h: 100, l: 100, c: 100, v: 1, q: 100, coarse: true },
+    { t: now - 2000, o: 110, h: 110, l: 110, c: 110, v: 1, q: 110 },
+    { t: now, o: 111, h: 111, l: 111, c: 111, v: 1, q: 111 },
+  ];
+  const far = windowStats(mk(now - 300000 - 40000), now);
+  assert.equal(far.partial, true);
+  assert.equal(far.base, 110);
+  const near = windowStats(mk(now - 300000 - 1000), now);
+  assert.equal(near.partial, false);
+  assert.equal(near.base, 100);
+});
+
 test('windowStats on empty series is null', () => {
   assert.equal(windowStats([], NOW), null);
 });

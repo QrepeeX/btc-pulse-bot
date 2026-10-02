@@ -9,6 +9,7 @@ export const Z95 = 1.96;
 export const CANDLE_SEC = 15;
 export const CANDLE_COUNT = 20;
 const FC_MAX_GAP_SEC = 5;
+const COARSE_BASE_TOL_MS = 2000;
 const MINUS = '−';
 
 export function upsertBar(series, bar) {
@@ -66,7 +67,8 @@ export function windowStats(series, nowMs, windowSec = WINDOW_SEC) {
   if (bars.length === 0) return null;
   const last = bars[bars.length - 1].c;
   let base = pickBaseBar(series, nowMs - windowSec * 1000);
-  const partial = base === null;
+  // A coarse (1m) base can sit up to a minute before the cutoff and would misstate the 5 min change.
+  const partial = base === null || (base.coarse === true && nowMs - windowSec * 1000 - base.t > COARSE_BASE_TOL_MS);
   if (partial) base = bars[0];
   const baseClose = partial ? base.o : base.c;
   let high = -Infinity;

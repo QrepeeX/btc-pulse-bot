@@ -48,7 +48,7 @@ export function createBinanceFeed({
   wsBase = 'wss://data-stream.binance.vision',
 } = {}) {
   return {
-    name: 'Binance',
+    name: 'Binance (Spot)',
     async backfill(sinceMs) {
       const q = sinceMs ? `&startTime=${sinceMs}&limit=1000` : '&limit=301';
       const res = await fetchImpl(`${restBase}/api/v3/klines?symbol=BTCUSDT&interval=1s${q}`);
@@ -79,19 +79,43 @@ export function createBybitFeed({
   clock = defaultClock,
 } = {}) {
   return {
-    name: 'Bybit',
-    // 1m klines are coarse: stamped at their last second so base-bar lookup by timestamp still works.
-    async backfill() {
-      const res = await fetchImpl(`${restBase}/v5/market/kline?category=spot&symbol=BTCUSDT&interval=1&limit=8`);
-      if (!res.ok) throw new Error(`bybit rest ${res.status}`);
-      const body = await res.json();
-      const list = (body && body.result && body.result.list) || [];
-      return list
-        .map((r) => {
-          const c = +r[4];
-          return { t: +r[0] + 59000, o: c, h: c, l: c, c, v: +r[5], q: +r[6], coarse: true };
-        })
-        .sort((a, b) => a.t - b.t);
+    name: 'Bybit (Spot)',
+    // Bybit has no 1 s klines: the last ~60 trades give real 1 s bars for the latest seconds, completed 1m
+    // klines (stamped at their last second, coarse) cover older minutes. Never mixed with another venue.
+    async backfill(sinceMs) {
+      const get = async (path) => {
+        const res = await fetchImpl(`${restBase}${path}`);
+        if (!res.ok) throw new Error(`bybit rest ${res.status}`);
+        return res.json();
+      };
+      const [tr, kl] = await Promise.allSettled([
+        get('/v5/market/recent-trade?category=spot&symbol=BTCUSDT&limit=1000'),
+        get('/v5/market/kline?category=spot&symbol=BTCUSDT&interval=1&limit=8'),
+      ]);
+      if (tr.status === 'rejected' && kl.status === 'rejected') throw tr.reason;
+      let real = [];
+      if (tr.status === 'fulfilled') {
+        const list = (tr.value && tr.value.result && tr.value.result.list) || [];
+        const trades = list
+          .map((d) => ({ t: +d.time, p: +d.price, q: +d.size }))
+          .filter((d) => d.t > 0 && d.p > 0)
+          .sort((a, b) => a.t - b.t);
+        real = tradesToSecondBars(trades);
+      }
+      let coarse = [];
+      if (kl.status === 'fulfilled') {
+        const body = kl.value || {};
+        const serverNow = +body.time || clock.now();
+        const firstReal = real.length ? real[0].t : Infinity;
+        coarse = ((body.result && body.result.list) || [])
+          .filter((r) => +r[0] + 60000 <= serverNow)
+          .map((r) => {
+            const c = +r[4];
+            return { t: +r[0] + 59000, o: c, h: c, l: c, c, v: +r[5], q: +r[6], coarse: true };
+          })
+          .filter((b) => b.t < firstReal);
+      }
+      return [...coarse, ...real].filter((b) => !sinceMs || b.t >= sinceMs).sort((a, b) => a.t - b.t);
     },
     subscribe({ onBar, onClose }) {
       const ws = new WebSocketImpl(wsUrl);
@@ -308,6 +332,6 @@ export function createFeedManager({
 
 export function createFeed(params, handlers) {
   const sources =
-    params.get('mock') === '1' ? [createMockFeed()] : [createBinanceFeed(), createBybitFeed()];
+    params.get('mock') === '1' ? [createMockFeed()] : [createBybitFeed(), createBinanceFeed()];
   return createFeedManager({ sources, ...handlers });
 }
