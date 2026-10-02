@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createForecastLog, evaluate, formatScore } from '../webapp/js/forecast-log.js';
+import { createForecastLog, evaluate, formatScore, calibrationFactor } from '../webapp/js/forecast-log.js';
 
 const memStore = (init = {}) => {
   const m = new Map(Object.entries(init));
@@ -127,4 +127,65 @@ test('formatScore strings and baselines', () => {
   const many = formatScore({ resolved: 30, dirN: 28, dirHit: 15, in68Hit: 20 });
   assert.doesNotMatch(many.base, /мало данных/);
   assert.match(many.base, /монетка ≈ 50% · диапазон ≈ 68%/);
+});
+
+const zEntries = (zs, over = {}) => zs.map((z) => ({ ...fc(), resolved: true, actual: 100, z, ...over }));
+
+test('calibrationFactor: <20 gives 1, percentile, clamp, ignores entries without z', () => {
+  assert.equal(calibrationFactor([]), 1);
+  assert.equal(calibrationFactor(zEntries(Array(19).fill(3))), 1);
+  assert.equal(calibrationFactor(zEntries(Array(20).fill(1.3))), 1.3);
+  assert.equal(calibrationFactor(zEntries(Array(20).fill(0.1))), 0.7);
+  assert.equal(calibrationFactor(zEntries(Array(20).fill(9))), 2.5);
+  const zs = Array.from({ length: 101 }, (_, i) => i / 50);
+  const k = calibrationFactor(zEntries(zs.slice(0, 100)));
+  assert.ok(Math.abs(k - 0.6827 * 1.98) < 0.01, String(k));
+  const noZ = zEntries(Array(30).fill(2)).map(({ z, ...e }) => e);
+  assert.equal(calibrationFactor(noZ), 1);
+  assert.equal(calibrationFactor([...noZ, ...zEntries(Array(19).fill(2))]), 1);
+  assert.equal(calibrationFactor([...noZ, ...zEntries(Array(20).fill(2))]), 2);
+  assert.equal(calibrationFactor([...zEntries(Array(20).fill(2)), { ...fc(), resolved: false, z: 9 }]), 2);
+});
+
+test('calibrationFactor: uses only the last 100 resolved entries', () => {
+  const entries = [...zEntries(Array(50).fill(2.4)), ...zEntries(Array(100).fill(1.1))];
+  assert.equal(calibrationFactor(entries), 1.1);
+});
+
+test('log: resolve stores z, sigmaBase and k persist; calibration() reports', () => {
+  const storage = memStore();
+  const sigma = 1e-4;
+  const w = sigma * Math.sqrt(300);
+  const log = createForecastLog({ storage, key: 'k', now: () => T });
+  log.record(fc({ sigma, k: 1.5 }));
+  const target = T + 300000;
+  log.resolveFromSeries([bar(target, 101 * Math.exp(2 * w)), bar(target + 1000, 101)]);
+  const e = log.entries[0];
+  assert.equal(e.sigmaBase, sigma);
+  assert.equal(e.k, 1.5);
+  assert.ok(Math.abs(e.z - 2) < 1e-9);
+  const back = createForecastLog({ storage, key: 'k' });
+  assert.ok(Math.abs(back.entries[0].z - 2) < 1e-9);
+  assert.deepEqual(back.calibration(), { k: 1, n: 1, active: false });
+  assert.equal(back.score().resolved, 1);
+});
+
+test('log: entries without sigma get no z but still count in score', () => {
+  const log = createForecastLog({ storage: memStore(), key: 'k', now: () => T });
+  log.record(fc());
+  const target = T + 300000;
+  log.resolveFromSeries([bar(target, 101), bar(target + 1000, 101)]);
+  assert.equal(log.entries[0].z, undefined);
+  assert.equal(log.score().resolved, 1);
+  assert.equal(log.calibration().n, 0);
+});
+
+test('load: invalid z/sigmaBase/k entries dropped, legacy entries kept', () => {
+  const good = { ...fc(), resolved: true, actual: 100, z: 1, sigmaBase: 1e-4, k: 1 };
+  const raw = JSON.stringify([
+    good, { ...good, z: 'a' }, { ...good, z: -1 }, { ...good, sigmaBase: null }, { ...good, k: 'x' },
+    { ...fc(), resolved: true, actual: 100 },
+  ]);
+  const log = createForecastLog({ storage: memStore({ k: raw }), key: 'k' });
+  assert.equal(log.entries.length, 2);
 });

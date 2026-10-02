@@ -117,9 +117,9 @@ function erf(x) {
 }
 export const normCdf = (x) => 0.5 * (1 + erf(x / Math.SQRT2));
 
-const bandAt = (p0, drift, sigma, h) => {
+const bandAt = (p0, drift, sigma, h, k = 1) => {
   const mu = drift * h;
-  const w = sigma * Math.sqrt(h);
+  const w = k * sigma * Math.sqrt(h);
   return {
     mid: p0 * Math.exp(mu),
     lo68: p0 * Math.exp(mu - Z68 * w),
@@ -130,7 +130,8 @@ const bandAt = (p0, drift, sigma, h) => {
 };
 
 // Statistical estimate, not a trading signal: damped log-trend plus a sqrt-time volatility corridor.
-export function forecast(series, nowMs) {
+export function forecast(series, nowMs, { k = 1 } = {}) {
+  if (!Number.isFinite(k) || k <= 0) k = 1;
   const bars = windowBars(series, nowMs).filter((b) => !b.coarse && b.c > 0);
   const n = bars.length;
   if (n < FC_MIN_BARS) return null;
@@ -161,13 +162,13 @@ export function forecast(series, nowMs) {
   const p0 = last.c;
   const drift = TREND_DAMP * slopePerSec;
   const h = HORIZON_SEC;
-  const band = bandAt(p0, drift, sigma, h);
-  const spread = sigma * Math.sqrt(h);
+  const band = bandAt(p0, drift, sigma, h, k);
+  const spread = k * sigma * Math.sqrt(h);
   const pUp = spread > 0 ? normCdf((drift * h) / spread) : drift > 0 ? 1 : drift < 0 ? 0 : 0.5;
   const movePct = (band.mid / p0 - 1) * 100;
   const direction = Math.abs(movePct) < FLAT_PCT ? 'flat' : movePct > 0 ? 'up' : 'down';
   return {
-    t0: last.t, p0, targetT: last.t + h * 1000, ...band, pUp, direction, slopePerSec, drift, sigma, n,
+    t0: last.t, p0, targetT: last.t + h * 1000, ...band, pUp, direction, slopePerSec, drift, sigma, k, n,
   };
 }
 
@@ -176,7 +177,7 @@ export function forecastPoints(fc, anchorSec, stepSec) {
   const out = [];
   for (let i = 0; i < count; i++) {
     const time = anchorSec + i * stepSec;
-    out.push(fc ? { time, ...bandAt(fc.p0, fc.drift, fc.sigma, i * stepSec) } : { time });
+    out.push(fc ? { time, ...bandAt(fc.p0, fc.drift, fc.sigma, i * stepSec, fc.k) } : { time });
   }
   return out;
 }

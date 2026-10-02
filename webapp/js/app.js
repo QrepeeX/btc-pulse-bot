@@ -18,7 +18,7 @@ const el = {
   toggle: $('toggle'), high: $('t-high'), low: $('t-low'), vbase: $('t-vbase'), vquote: $('t-vquote'),
   source: $('source'), updated: $('updated'),
   fc: $('fc'), fcTitle: $('fc-title'), fcMid: $('fc-mid'), fcRange: $('fc-range'), fcProb: $('fc-prob'),
-  fcScore: $('fc-score'), fcBase: $('fc-base'),
+  fcScore: $('fc-score'), fcBase: $('fc-base'), fcCalib: $('fc-calib'),
 };
 
 const tg = initTelegram();
@@ -33,6 +33,7 @@ let lastFc = null;
 let expiredDropped = false;
 
 const params = new URLSearchParams(location.search);
+const fcKey = params.get('mock') === '1' ? 'btcpulse:v1:fc:mock' : 'btcpulse:v1:fc';
 
 function pickStorage() {
   try {
@@ -46,11 +47,16 @@ function pickStorage() {
   }
 }
 
+const storage = pickStorage();
+if (params.get('resetfc') === '1') {
+  try {
+    if (storage.removeItem) storage.removeItem(fcKey);
+    else storage.setItem(fcKey, '[]');
+  } catch {}
+}
+
 // The github.io origin is shared with other projects, hence the namespace; mock data never mixes with live.
-const fcLog = createForecastLog({
-  storage: pickStorage(),
-  key: params.get('mock') === '1' ? 'btcpulse:v1:fc:mock' : 'btcpulse:v1:fc',
-});
+const fcLog = createForecastLog({ storage, key: fcKey });
 
 try {
   chart = createChart($('chart'));
@@ -76,6 +82,9 @@ function renderForecast(stale) {
   const score = formatScore(fcLog.score());
   el.fcScore.textContent = score.main;
   el.fcBase.textContent = score.base;
+  const cal = fcLog.calibration();
+  el.fcCalib.hidden = !cal.active;
+  if (cal.active) el.fcCalib.textContent = `калибровка ×${cal.k.toFixed(1).replace(".", ",")}`;
   if (!fc) {
     el.fcTitle.textContent = 'Оценка через 5 мин';
     el.fcMid.textContent = stale ? 'Нет связи' : 'Накопление данных';
@@ -93,7 +102,7 @@ function renderForecast(stale) {
 // Never per WS bar: the estimate, the fan and the log move every FORECAST_MS and on backfill.
 function recalcForecast() {
   const stale = isStale();
-  lastFc = stale || !series.length ? null : forecast(series, feedNow());
+  lastFc = stale || !series.length ? null : forecast(series, feedNow(), { k: fcLog.calibration().k });
   if (chart) chart.setForecast(lastFc, series, feedNow());
   if (lastFc && !document.hidden) {
     fcLog.resolveFromSeries(series);

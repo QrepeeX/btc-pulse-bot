@@ -282,3 +282,20 @@ test('formatPrice0 / formatProb', () => {
   assert.equal(flat(formatPrice0(84318.6)), '84 319');
   assert.equal(formatProb(0.5149), '51%');
 });
+
+test('forecast: k scales both bands around the same mid; default 1; bad k ignored; forecastPoints follow k', () => {
+  const s = noisy(7, 1e-4);
+  const a = forecast(s, nowOf(s));
+  const b = forecast(s, nowOf(s), { k: 2 });
+  assert.equal(a.k, 1);
+  assert.equal(b.k, 2);
+  assert.equal(b.mid, a.mid);
+  assert.equal(b.sigma, a.sigma);
+  for (const key of ['hi68', 'hi95']) {
+    assert.ok(Math.abs((Math.log(b[key]) - Math.log(b.mid)) - 2 * (Math.log(a[key]) - Math.log(a.mid))) < 1e-9, key);
+  }
+  assert.deepEqual(forecast(s, nowOf(s), { k: NaN }), a);
+  assert.deepEqual(forecast(s, nowOf(s), { k: 0 }), a);
+  const end = forecastPoints(b, 1000, 15).at(-1);
+  assert.ok(Math.abs(end.hi68 - b.hi68) < 1e-6);
+});
