@@ -41,6 +41,16 @@
       <button type="button" data-mode="candle" aria-pressed="false">Свечи</button>
     </div>
 
+    <section class="forecast rim pending" id="fc" aria-label="Оценка цены через 5 минут">
+      <div class="fc-head"><span id="fc-title">Оценка через 5 мин</span><span class="arrow" aria-hidden="true"></span></div>
+      <div class="fc-mid" id="fc-mid">Накопление данных</div>
+      <div class="fc-note">Оценка, не финансовый совет</div>
+      <div class="fc-row"><span>вероятный диапазон (≈68%)</span><b id="fc-range">—</b></div>
+      <div class="fc-row"><span>вероятность роста</span><b id="fc-prob">—</b></div>
+      <div class="fc-score" id="fc-score">Счёт появится через 5 мин</div>
+      <div class="fc-base" id="fc-base">монетка ≈ 50% · диапазон ≈ 68% · мало данных</div>
+    </section>
+
     <section class="tiles" aria-label="Статистика за 5 минут">
       <div class="tile rim"><span>Максимум</span><b id="t-high">—</b></div>
       <div class="tile rim"><span>Минимум</span><b id="t-low">—</b></div>

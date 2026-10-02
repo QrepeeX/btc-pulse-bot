@@ -1,13 +1,15 @@
 import {
-  upsertBar, trimWindow, windowStats, formatPrice, formatPct, formatAbs, formatVolume,
+  upsertBar, trimWindow, windowStats, forecast, formatPrice, formatPrice0, formatProb, formatPct, formatAbs,
+  formatVolume,
 } from './calc.js';
+import { createForecastLog, formatScore } from './forecast-log.js';
 import { createFeed } from './feed.js';
 import { createChart } from './chart.js';
 import { initTelegram } from './tg.js';
 
 const STALE_MS = 5000;
 const RENDER_MIN_MS = 250;
-const FULL_REFRESH_MS = 30000;
+const FORECAST_MS = 5000;
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -15,6 +17,8 @@ const el = {
   staleText: $('stale-text'), banner: $('banner'), overlayText: $('overlay-text'), retry: $('retry'),
   toggle: $('toggle'), high: $('t-high'), low: $('t-low'), vbase: $('t-vbase'), vquote: $('t-vquote'),
   source: $('source'), updated: $('updated'),
+  fc: $('fc'), fcTitle: $('fc-title'), fcMid: $('fc-mid'), fcRange: $('fc-range'), fcProb: $('fc-prob'),
+  fcScore: $('fc-score'), fcBase: $('fc-base'),
 };
 
 const tg = initTelegram();
@@ -25,6 +29,28 @@ let status = { state: 'connecting', source: '', fallback: false };
 let chart = null;
 let baseLinePrice = null;
 let hasData = false;
+let lastFc = null;
+let expiredDropped = false;
+
+const params = new URLSearchParams(location.search);
+
+function pickStorage() {
+  try {
+    const probe = '__btcpulse_probe';
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    return window.localStorage;
+  } catch {
+    const m = new Map();
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) };
+  }
+}
+
+// The github.io origin is shared with other projects, hence the namespace; mock data never mixes with live.
+const fcLog = createForecastLog({
+  storage: pickStorage(),
+  key: params.get('mock') === '1' ? 'btcpulse:v1:fc:mock' : 'btcpulse:v1:fc',
+});
 
 try {
   chart = createChart($('chart'));
@@ -34,12 +60,54 @@ try {
 
 const feedNow = () => (series.length ? series[series.length - 1].t + 999 : Date.now());
 const clockFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const hmFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+function isStale() {
+  const lastTick = feed.getLastTick();
+  const age = lastTick ? Date.now() - lastTick : 0;
+  return status.state === 'error' || status.state === 'stale' || (lastTick > 0 && age > STALE_MS);
+}
+
+function renderForecast(stale) {
+  const fc = lastFc;
+  el.fc.classList.remove('up', 'down', 'flat');
+  el.fc.classList.toggle('pending', !fc);
+  el.fc.classList.toggle('stale', stale || !fc);
+  const score = formatScore(fcLog.score());
+  el.fcScore.textContent = score.main;
+  el.fcBase.textContent = score.base;
+  if (!fc) {
+    el.fcTitle.textContent = 'Оценка через 5 мин';
+    el.fcMid.textContent = stale ? 'Нет связи' : 'Накопление данных';
+    el.fcRange.textContent = '—';
+    el.fcProb.textContent = '—';
+    return;
+  }
+  el.fc.classList.add(fc.direction);
+  el.fcTitle.textContent = `Оценка через 5 мин · на ${hmFmt.format(new Date(fc.targetT))}`;
+  el.fcMid.textContent = `≈ $${formatPrice0(fc.mid)}`;
+  el.fcRange.textContent = `$${formatPrice0(fc.lo68)} – $${formatPrice0(fc.hi68)}`;
+  el.fcProb.textContent = formatProb(fc.pUp);
+}
+
+// Never per WS bar: the estimate, the fan and the log move every FORECAST_MS and on backfill.
+function recalcForecast() {
+  const stale = isStale();
+  lastFc = stale || !series.length ? null : forecast(series, feedNow());
+  if (chart) chart.setForecast(lastFc, series, feedNow());
+  if (lastFc && !document.hidden) {
+    fcLog.resolveFromSeries(series);
+    if (fcLog.shouldRecord(lastFc)) fcLog.record(lastFc);
+  }
+  scheduleRender();
+}
 
 function render() {
   const st = series.length ? windowStats(series, feedNow()) : null;
   const lastTick = feed.getLastTick();
   const age = lastTick ? Date.now() - lastTick : 0;
-  const stale = status.state === 'error' || status.state === 'stale' || (lastTick > 0 && age > STALE_MS);
+  const stale = isStale();
+  renderForecast(stale);
 
   el.app.classList.toggle('has-error', status.state === 'error');
   el.source.textContent = status.source ? `Источник: ${status.source}` : 'Источник: —';
@@ -93,13 +161,17 @@ function scheduleRender() {
   }, wait);
 }
 
-const feed = createFeed(new URLSearchParams(location.search), {
+const feed = createFeed(params, {
   onBars(bars, { replace }) {
     if (replace) series.length = 0;
     for (const b of bars) upsertBar(series, b);
     trimWindow(series, feedNow());
-    if (chart) chart.setData(series, feedNow());
-    scheduleRender();
+    if (!expiredDropped && series.length) {
+      expiredDropped = true;
+      fcLog.discardExpired(series[0].t);
+    }
+    if (chart) recalcForecast();
+    else scheduleRender();
   },
   onBar(bar) {
     upsertBar(series, bar);
@@ -118,8 +190,8 @@ setInterval(() => {
 }, 1000);
 
 setInterval(() => {
-  if (chart && series.length && !document.hidden) chart.setData(series, feedNow());
-}, FULL_REFRESH_MS);
+  if (series.length && !document.hidden) recalcForecast();
+}, FORECAST_MS);
 
 el.toggle.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-mode]');
@@ -139,7 +211,10 @@ el.retry.addEventListener('click', () => feed.retry());
 
 const resume = () => feed.resume();
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) resume();
+  if (!document.hidden) {
+    resume();
+    if (series.length) recalcForecast();
+  }
 });
 window.addEventListener('online', resume);
 tg.onActivated(resume);
